@@ -22,11 +22,9 @@
 
   // ─── Spam policy ───────────────────────────────────────────────────
 
-  let postageThreshold = 1;
-  let powRequirement = 20;
+  let postageThreshold = 10;
   let acceptedMints = 'https://mint.minibits.cash';
   let contactsFree = true;
-  let nip05Free = true;
   let unknownAction: 'quarantine' | 'reject' = 'quarantine';
 
   // ─── Stats ─────────────────────────────────────────────────────────
@@ -189,21 +187,13 @@
     </div>
     <div class="p-5 space-y-4">
       <!-- Trust bypasses -->
-      <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div>
         <label class="flex items-center gap-3 cursor-pointer">
           <input type="checkbox" bind:checked={contactsFree}
                  class="w-4 h-4 rounded border-gray-300 text-mail-accent focus:ring-mail-accent" />
           <div>
             <p class="text-sm font-medium text-gray-700">Contacts bypass all checks</p>
             <p class="text-xs text-mail-muted">Kind 3 follows get free delivery</p>
-          </div>
-        </label>
-        <label class="flex items-center gap-3 cursor-pointer">
-          <input type="checkbox" bind:checked={nip05Free}
-                 class="w-4 h-4 rounded border-gray-300 text-mail-accent focus:ring-mail-accent" />
-          <div>
-            <p class="text-sm font-medium text-gray-700">NIP-05 verified bypass</p>
-            <p class="text-xs text-mail-muted">Verified identities get free delivery</p>
           </div>
         </label>
       </div>
@@ -224,25 +214,6 @@
         <div class="flex justify-between text-xs text-mail-muted mt-1">
           <span>0 (free)</span>
           <span>100 sats</span>
-        </div>
-      </div>
-
-      <!-- PoW requirement -->
-      <div>
-        <label class="text-sm font-medium text-gray-700 block mb-1">
-          NIP-13 PoW Requirement
-          <span class="text-xs text-mail-muted font-normal">({powRequirement} bits)</span>
-        </label>
-        <input
-          type="range"
-          min="0"
-          max="40"
-          bind:value={powRequirement}
-          class="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer accent-mail-accent"
-        />
-        <div class="flex justify-between text-xs text-mail-muted mt-1">
-          <span>0 (none)</span>
-          <span>40 bits</span>
         </div>
       </div>
 
