@@ -313,7 +313,7 @@ export class NostrMailClient {
       const rumorJson = await this.signer.nip44.decrypt(seal.pubkey, seal.content);
       const rumor = JSON.parse(rumorJson);
 
-      if (rumor.kind !== 1111 && rumor.kind !== 14) return null;
+      if (rumor.kind !== 1400 && rumor.kind !== 14) return null;
 
       // Verify sender consistency: rumor.pubkey must match seal.pubkey
       if (rumor.pubkey !== seal.pubkey) return null;
@@ -388,7 +388,7 @@ export class NostrMailClient {
 
   // ── Send Mail ────────────────────────────────────────────────────────
 
-  /** Send a NOSTR Mail message (gift-wrapped kind 1111 rumor). */
+  /** Send a NOSTR Mail message (gift-wrapped kind 1400 rumor). */
   async sendMail(params: SendMailParams): Promise<string> {
     if (!this.signer) throw new Error('Not connected');
 
@@ -397,7 +397,7 @@ export class NostrMailClient {
       ...(params.cc || []).map(p => ({ pubkey: p, role: 'cc' })),
     ];
 
-    // Build the kind 1111 rumor (unsigned)
+    // Build the kind 1400 rumor (unsigned)
     const tags: string[][] = [];
     for (const r of allRecipients) {
       tags.push(['p', r.pubkey, '', r.role]);
@@ -414,7 +414,7 @@ export class NostrMailClient {
     }
 
     const rumor = {
-      kind: 1111,
+      kind: 1400,
       pubkey: this.pubkey,
       created_at: Math.floor(Date.now() / 1000),
       tags,
