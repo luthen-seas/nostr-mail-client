@@ -1,0 +1,42 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-mail-bg text-gray-900 antialiased;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+  }
+
+  /* Scrollbar styling */
+  ::-webkit-scrollbar {
+    width: 6px;
+  }
+  ::-webkit-scrollbar-track {
+    @apply bg-transparent;
+  }
+  ::-webkit-scrollbar-thumb {
+    @apply bg-gray-300 rounded-full;
+  }
+  ::-webkit-scrollbar-thumb:hover {
+    @apply bg-gray-400;
+  }
+}
+
+@layer components {
+  .btn-primary {
+    @apply bg-mail-accent hover:bg-mail-accent-hover text-white px-4 py-2 rounded-lg
+           font-medium transition-colors duration-150 focus:outline-none focus:ring-2
+           focus:ring-mail-accent focus:ring-offset-2;
+  }
+  .btn-secondary {
+    @apply bg-white hover:bg-gray-50 text-gray-700 px-4 py-2 rounded-lg border
+           border-mail-border font-medium transition-colors duration-150 focus:outline-none
+           focus:ring-2 focus:ring-mail-accent focus:ring-offset-2;
+  }
+  .input-field {
+    @apply w-full px-3 py-2 border border-mail-border rounded-lg bg-white
+           focus:outline-none focus:ring-2 focus:ring-mail-accent focus:border-transparent
+           placeholder-gray-400 text-sm;
+  }
+}
