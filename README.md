@@ -30,7 +30,7 @@ This is the **reference client** for the NOSTR Mail protocol. It proves that the
 | NIP | Purpose | Implementation |
 |-----|---------|---------------|
 | NIP-07 | Browser signer | Login via extension |
-| NIP-17 | Private DMs | Kind 15 mail rumors |
+| NIP-17 | Private DMs | Kind 1111 mail rumors |
 | NIP-19 | Bech32 encoding | npub/nsec handling |
 | NIP-44 | Versioned encryption | Seal + wrap layers |
 | NIP-59 | Gift wrapping | 3-layer encryption |

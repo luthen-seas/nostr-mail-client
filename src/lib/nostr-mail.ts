@@ -313,7 +313,10 @@ export class NostrMailClient {
       const rumorJson = await this.signer.nip44.decrypt(seal.pubkey, seal.content);
       const rumor = JSON.parse(rumorJson);
 
-      if (rumor.kind !== 15 && rumor.kind !== 14) return null;
+      if (rumor.kind !== 1111 && rumor.kind !== 14) return null;
+
+      // Verify sender consistency: rumor.pubkey must match seal.pubkey
+      if (rumor.pubkey !== seal.pubkey) return null;
 
       // Parse rumor tags into structured mail
       return this.parseRumor(rumor, wrapEvent.id, seal.pubkey);
@@ -385,7 +388,7 @@ export class NostrMailClient {
 
   // ── Send Mail ────────────────────────────────────────────────────────
 
-  /** Send a NOSTR Mail message (gift-wrapped kind 15 rumor). */
+  /** Send a NOSTR Mail message (gift-wrapped kind 1111 rumor). */
   async sendMail(params: SendMailParams): Promise<string> {
     if (!this.signer) throw new Error('Not connected');
 
@@ -394,7 +397,7 @@ export class NostrMailClient {
       ...(params.cc || []).map(p => ({ pubkey: p, role: 'cc' })),
     ];
 
-    // Build the kind 15 rumor (unsigned)
+    // Build the kind 1111 rumor (unsigned)
     const tags: string[][] = [];
     for (const r of allRecipients) {
       tags.push(['p', r.pubkey, '', r.role]);
@@ -411,7 +414,7 @@ export class NostrMailClient {
     }
 
     const rumor = {
-      kind: 15,
+      kind: 1111,
       pubkey: this.pubkey,
       created_at: Math.floor(Date.now() / 1000),
       tags,
@@ -583,7 +586,10 @@ export class NostrMailClient {
 
 function randomOffset(): number {
   const maxOffset = 172800; // +/- 2 days
-  return Math.floor(Math.random() * maxOffset * 2) - maxOffset;
+  const buf = new Uint32Array(1);
+  crypto.getRandomValues(buf);
+  const normalized = (buf[0]! / 0x100000000) * 2 - 1;
+  return Math.floor(normalized * maxOffset);
 }
 
 function hexToBytes(hex: string): Uint8Array {
