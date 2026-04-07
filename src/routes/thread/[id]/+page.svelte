@@ -17,7 +17,7 @@
 
   // Get all messages in this thread
   $: threadMessages = $inbox
-    .filter(m => m.threadId === threadId || m.id === threadId)
+    .filter(m => m.threadId === threadId || m.messageId === threadId || m.id === threadId)
     .sort((a, b) => a.createdAt - b.createdAt);
 
   $: subject = threadMessages.length > 0 ? threadMessages[0].subject : '(no subject)';
@@ -25,8 +25,9 @@
   // Mark all messages as read when viewing
   $: {
     for (const msg of threadMessages) {
-      if (!$mailboxState.reads.has(msg.id)) {
-        markAsRead(msg.id);
+      const stateKey = msg.messageId || msg.id;
+      if (!$mailboxState.reads.has(stateKey)) {
+        markAsRead(stateKey);
       }
     }
   }

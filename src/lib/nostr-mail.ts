@@ -20,6 +20,7 @@ export interface Signer {
 
 export interface ParsedMail {
   id: string;
+  messageId: string;
   from: { pubkey: string; name?: string; nip05?: string };
   to: { pubkey: string; name?: string; role: string }[];
   cc: { pubkey: string; name?: string; role: string }[];
@@ -338,6 +339,7 @@ export class NostrMailClient {
     const cc = recipients.filter(r => r.role === 'cc');
 
     const subject = tags.find(t => t[0] === 'subject')?.[1] || '(no subject)';
+    const messageId = tags.find(t => t[0] === 'message-id')?.[1] || '';
     const contentType = (tags.find(t => t[0] === 'content-type')?.[1] || 'text/plain') as ParsedMail['contentType'];
     const replyTo = tags.find(t => t[0] === 'reply' || (t[0] === 'e' && t[3] === 'reply'))?.[1];
     const threadId = tags.find(t => t[0] === 'thread' || (t[0] === 'e' && t[3] === 'root'))?.[1];
@@ -371,6 +373,7 @@ export class NostrMailClient {
 
     return {
       id: wrapId,
+      messageId,
       from: { pubkey: senderPubkey },
       to,
       cc,
@@ -403,6 +406,12 @@ export class NostrMailClient {
       tags.push(['p', r.pubkey, '', r.role]);
     }
     tags.push(['subject', params.subject]);
+
+    // Generate stable message-id (shared across all recipient copies)
+    const messageId = Array.from(crypto.getRandomValues(new Uint8Array(32)),
+      b => b.toString(16).padStart(2, '0')).join('');
+    tags.push(['message-id', messageId]);
+
     if (params.contentType && params.contentType !== 'text/plain') {
       tags.push(['content-type', params.contentType]);
     }
@@ -516,33 +525,53 @@ export class NostrMailClient {
     };
 
     const wrap = finalizeEvent(wrapTemplate, ephemeralPrivkey);
+    ephemeralPrivkey.fill(0); // Zero ephemeral key material after use
     return wrap;
   }
 
-  // ── Mailbox State (kind 10099) ───────────────────────────────────────
+  // ── Mailbox State (kind 30099, partitioned by month) ─────────────────
 
-  /** Fetch the user's mailbox state from relays. */
+  /** Fetch the user's mailbox state from relays (all monthly partitions). */
   async fetchMailboxState(): Promise<MailboxState> {
     const events = await this.pool.querySync(this.relays, {
-      kinds: [10099],
+      kinds: [30099],
       authors: [this.pubkey],
-      limit: 1,
     });
 
     if (events.length === 0) {
       return { reads: new Set(), flags: new Map(), folders: new Map(), deleted: new Set() };
     }
 
-    return tagsToState(events[0].tags);
+    // Merge all monthly partitions into a single state
+    let merged: MailboxState = { reads: new Set(), flags: new Map(), folders: new Map(), deleted: new Set() };
+    for (const event of events) {
+      const partitionState = tagsToState(event.tags);
+      // G-Set union for reads and deleted
+      for (const id of partitionState.reads) merged.reads.add(id);
+      for (const id of partitionState.deleted) merged.deleted.add(id);
+      // Union for flags
+      for (const [id, flags] of partitionState.flags) {
+        const existing = merged.flags.get(id) || [];
+        merged.flags.set(id, [...new Set([...existing, ...flags])]);
+      }
+      // LWW for folders (latest event wins)
+      for (const [id, folder] of partitionState.folders) {
+        merged.folders.set(id, folder);
+      }
+    }
+    return merged;
   }
 
-  /** Publish updated mailbox state to relays. */
+  /** Publish updated mailbox state to relays (current month partition). */
   async publishMailboxState(state: MailboxState): Promise<void> {
     if (!this.signer) return;
 
-    const tags = stateToTags(state);
+    const now = new Date();
+    const partition = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
+
+    const tags = stateToTags(state, partition);
     const event = await this.signer.signEvent({
-      kind: 10099,
+      kind: 30099,
       created_at: Math.floor(Date.now() / 1000),
       tags,
       content: '',
@@ -647,8 +676,8 @@ function tagsToState(tags: string[][]): MailboxState {
   return state;
 }
 
-function stateToTags(state: MailboxState): string[][] {
-  const tags: string[][] = [];
+function stateToTags(state: MailboxState, partition: string): string[][] {
+  const tags: string[][] = [['d', partition]];
   for (const id of state.reads) tags.push(['read', id]);
   for (const [id, flagList] of state.flags) {
     if (flagList.length > 0) tags.push(['flag', id, ...flagList]);

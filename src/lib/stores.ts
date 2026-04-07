@@ -71,7 +71,7 @@ export const selectedThread = writable<ThreadNode[]>([]);
 
 // ─── Mailbox State ───────────────────────────────────────────────────────────
 
-/** Reads, flags, folders, and deletes — synced via kind 10099. */
+/** Reads, flags, folders, and deletes — synced via kind 30099 (monthly partitions). */
 export const mailboxState = writable<MailboxState>({
   reads: new Set<string>(),
   flags: new Map<string, string[]>(),
@@ -162,8 +162,8 @@ export function startReply(mail: ParsedMail): void {
     cc: '',
     subject: mail.subject.startsWith('Re: ') ? mail.subject : `Re: ${mail.subject}`,
     body: '',
-    replyTo: mail.id,
-    threadId: mail.threadId || mail.id,
+    replyTo: mail.messageId || mail.id,
+    threadId: mail.threadId || mail.messageId || mail.id,
   });
 }
 
@@ -212,7 +212,7 @@ export const threadedInbox = derived(
     const threads = new Map<string, ParsedMail[]>();
 
     for (const msg of $messages) {
-      const key = msg.threadId || msg.id;
+      const key = msg.threadId || msg.messageId || msg.id;
       const existing = threads.get(key);
       if (existing) {
         existing.push(msg);
@@ -226,7 +226,7 @@ export const threadedInbox = derived(
       msgs.sort((a, b) => a.createdAt - b.createdAt);
       const latest = msgs[msgs.length - 1];
       const participants = [...new Set(msgs.map(m => m.from.pubkey))];
-      const hasUnread = msgs.some(m => !$state.reads.has(m.id));
+      const hasUnread = msgs.some(m => !$state.reads.has(m.messageId || m.id));
 
       summaries.push({
         threadId,

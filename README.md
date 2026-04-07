@@ -15,7 +15,7 @@ This is the **reference client** for the NOSTR Mail protocol. It proves that the
 - **Search**: Real-time filtering across subject, body, and sender
 - **Settings**: Identity, relay management, spam policy (Cashu/PoW thresholds), key management
 - **Encryption**: Full NIP-59 gift wrapping (rumor -> seal -> gift wrap) with NIP-44 encryption
-- **Mailbox state**: Read/flag/folder sync via kind 10099 (CRDT-based)
+- **Mailbox state**: Read/flag/folder sync via kind 30099 (CRDT-based)
 - **Anti-spam**: 6-tier trust model with contacts, NIP-05, PoW, and Cashu postage
 
 ## Tech Stack
@@ -84,7 +84,7 @@ The client uses a singleton `NostrMailClient` instance (`nostrMail`) that manage
 3. **Gift-wrap encryption** (rumor -> seal -> wrap) for outbound mail
 4. **Gift-wrap decryption** (wrap -> seal -> rumor) for inbound mail
 5. **Inbox subscription** with real-time WebSocket push
-6. **Mailbox state** sync via kind 10099 replaceable events
+6. **Mailbox state** sync via kind 30099 replaceable events
 
 Svelte stores provide reactive state that components subscribe to:
 

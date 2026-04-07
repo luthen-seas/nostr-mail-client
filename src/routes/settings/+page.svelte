@@ -264,7 +264,7 @@
         <button on:click={syncMailboxState} disabled={syncingState} class="btn-secondary text-sm">
           {syncingState ? 'Syncing...' : 'Sync Mailbox State to Relays'}
         </button>
-        <span class="text-xs text-mail-muted">Publishes read/flag/folder state (kind 10099)</span>
+        <span class="text-xs text-mail-muted">Publishes read/flag/folder state (kind 30099, monthly partitions)</span>
       </div>
     </div>
   </section>
