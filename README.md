@@ -16,7 +16,7 @@ This is the **reference client** for the NOSTR Mail protocol. It proves that the
 - **Settings**: Identity, relay management, spam policy (Cashu/PoW thresholds), key management
 - **Encryption**: Full NIP-59 gift wrapping (rumor -> seal -> gift wrap) with NIP-44 encryption
 - **Mailbox state**: Read/flag/folder sync via kind 30099 (CRDT-based)
-- **Anti-spam**: 6-tier trust model with contacts, NIP-05, PoW, and Cashu postage
+- **Anti-spam**: 3-tier trust model (contacts bypass, Cashu P2PK postage, quarantine)
 
 ## Tech Stack
 
