@@ -18,10 +18,7 @@ jobs:
           cache: 'npm'
 
       - name: Install dependencies
-        run: npm ci --legacy-peer-deps
+        run: npm ci
 
-      # TODO: re-enable once SvelteKit deps are properly wired
-      # (missing @sveltejs/vite-plugin-svelte; package.json needs "type": "module";
-      # tsconfig.json extends a path that requires `svelte-kit sync` to generate)
-      # - name: Build
-      #   run: npm run build
+      - name: Build
+        run: npm run build
