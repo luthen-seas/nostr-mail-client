@@ -1,5 +1,6 @@
 <script lang="ts">
   import '../app.css';
+  import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { page } from '$app/stores';
   import {
@@ -12,6 +13,18 @@
     resetCompose,
   } from '$lib/stores';
   import { nostrMail } from '$lib/nostr-mail';
+
+  // F-CLIENT-KEY-01: best-effort wipe of in-memory key material when the tab is
+  // closed or reloaded, so the nsec buffer does not linger past the session.
+  onMount(() => {
+    const wipe = () => nostrMail.disconnect();
+    window.addEventListener('beforeunload', wipe);
+    window.addEventListener('pagehide', wipe);
+    return () => {
+      window.removeEventListener('beforeunload', wipe);
+      window.removeEventListener('pagehide', wipe);
+    };
+  });
 
   let sidebarOpen = false;
 

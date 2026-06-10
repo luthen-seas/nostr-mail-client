@@ -1,0 +1,14 @@
+# Security response headers for static hosting (Cloudflare Pages / Netlify
+# `_headers` format; adapter-static copies this file into the build root).
+#
+# These complement the CSP injected by SvelteKit (kit.csp, hash mode). The
+# directives below MUST be delivered as real HTTP headers — a <meta> CSP cannot
+# enforce frame-ancestors or form-action. For nginx/Caddy/other hosts, set the
+# equivalent headers in the server config.
+/*
+  X-Frame-Options: DENY
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: no-referrer
+  Cross-Origin-Opener-Policy: same-origin
+  Content-Security-Policy: frame-ancestors 'none'; form-action 'self'; base-uri 'self'
+  Permissions-Policy: geolocation=(), microphone=(), camera=()
