@@ -54,9 +54,22 @@
   let savingPolicy = false;
 
   async function saveSpamPolicy() {
-    // In a full implementation, this would publish a kind 10097 event
     savingPolicy = true;
-    setTimeout(() => { savingPolicy = false; }, 1000);
+    try {
+      await nostrMail.publishSpamPolicy({
+        cashuMinSats: postageThreshold,
+        acceptedMints: acceptedMints
+          .split(',')
+          .map((s) => s.trim())
+          .filter(Boolean),
+        unknownAction,
+        contactsFree,
+      });
+    } catch (err) {
+      console.error('Failed to publish spam policy:', err);
+    } finally {
+      savingPolicy = false;
+    }
   }
 
   let syncingState = false;

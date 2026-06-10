@@ -3,6 +3,10 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <!-- CSP is configured in svelte.config.js (kit.csp, hash mode) and injected
+         via %sveltekit.head%, so script-src no longer needs 'unsafe-inline'.
+         frame-ancestors/form-action must be set as HTTP headers at the CDN/web
+         server layer (a <meta> CSP cannot enforce them). -->
     <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>&#9993;</text></svg>" />
     <title>NOSTR Mail</title>
     %sveltekit.head%

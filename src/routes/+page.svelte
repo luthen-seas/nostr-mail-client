@@ -106,7 +106,7 @@
   });
 
   function openThread(thread: ThreadSummary) {
-    markAsRead(thread.latestMessage.id);
+    markAsRead(thread.latestMessage.messageId ?? thread.latestMessage.id);
     goto(`/thread/${thread.threadId}`);
   }
 
