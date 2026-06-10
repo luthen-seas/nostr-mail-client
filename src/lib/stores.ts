@@ -255,6 +255,9 @@ export const activeView = writable<ActiveView>('inbox');
 export const unreadCount = derived(
   [inbox, mailboxState],
   ([$inbox, $state]) => {
-    return $inbox.filter(m => !$state.reads.has(m.id) && !$state.deleted.has(m.id)).length;
+    return $inbox.filter(m => {
+      const key = m.messageId ?? m.id;
+      return !$state.reads.has(key) && !$state.deleted.has(key);
+    }).length;
   }
 );

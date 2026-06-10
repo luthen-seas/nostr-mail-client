@@ -3,7 +3,8 @@
 // Handles relay connections, gift-wrap encryption, inbox subscriptions,
 // contact list management, and mailbox state sync.
 
-import { SimplePool, finalizeEvent, generateSecretKey, getPublicKey } from 'nostr-tools';
+import { SimplePool } from 'nostr-tools/pool';
+import { finalizeEvent, generateSecretKey, getPublicKey, verifyEvent } from 'nostr-tools/pure';
 import * as nip44 from 'nostr-tools/nip44';
 import * as nip19 from 'nostr-tools/nip19';
 
@@ -62,11 +63,14 @@ export interface ProfileInfo {
 export interface SendMailParams {
   to: string[];
   cc?: string[];
+  bcc?: string[];
   subject: string;
   body: string;
   contentType?: 'text/plain' | 'text/markdown';
   replyTo?: string;
   threadId?: string;
+  /** Bypass the 0-60s CSPRNG publish delay (DEC-016). Default: false. */
+  immediate?: boolean;
 }
 
 // ─── Default Relays ──────────────────────────────────────────────────────────
@@ -94,6 +98,8 @@ export class NostrMailClient {
   private inboxRelays: string[] = [];
   private subscriptionCloser: (() => void) | null = null;
   private profileCache: Map<string, ProfileInfo> = new Map();
+  /** Master privkey bytes when connected via nsec; zeroed on disconnect. */
+  private privkeyBytes: Uint8Array | null = null;
 
   constructor() {
     this.pool = new SimplePool();
@@ -115,19 +121,22 @@ export class NostrMailClient {
 
   /** Connect with a raw nsec private key (stores in memory only). */
   async connectWithNsec(nsecOrHex: string): Promise<string> {
-    let privkeyHex: string;
+    let privkey: Uint8Array;
     if (nsecOrHex.startsWith('nsec1')) {
       const decoded = nip19.decode(nsecOrHex);
       if (decoded.type !== 'nsec') throw new Error('Invalid nsec');
-      privkeyHex = Array.from(decoded.data as Uint8Array)
-        .map(b => b.toString(16).padStart(2, '0'))
-        .join('');
+      privkey = decoded.data as Uint8Array;
+    } else if (/^[0-9a-f]{64}$/i.test(nsecOrHex.trim())) {
+      privkey = hexToBytes(nsecOrHex.trim());
     } else {
-      privkeyHex = nsecOrHex;
+      throw new Error('Invalid private key format');
     }
 
-    const privkey = hexToBytes(privkeyHex);
     const pubkey = getPublicKey(privkey);
+
+    // Stash the buffer so disconnect() can zero it. The closures below capture
+    // `privkey` by reference, so they keep working until disconnect() fires.
+    this.privkeyBytes = privkey;
 
     this.signer = {
       getPublicKey: async () => pubkey,
@@ -310,6 +319,11 @@ export class NostrMailClient {
 
       if (seal.kind !== 13) return null;
 
+      // Verify seal Schnorr signature (NIP-59 MUST; spec compliance + DiD).
+      // F2 from audit: the active-impersonation attack is blocked by NIP-44
+      // HMAC binding, but we still must verify per the spec.
+      if (!verifyEvent(seal)) return null;
+
       // Layer 2: Decrypt seal -> rumor
       const rumorJson = await this.signer.nip44.decrypt(seal.pubkey, seal.content);
       const rumor = JSON.parse(rumorJson);
@@ -446,6 +460,13 @@ export class NostrMailClient {
       // Create gift wrap via signer
       const wrap = await this.createGiftWrap(rumor, recipientPubkey);
 
+      // DEC-016: 0-60s CSPRNG random publish delay to defeat send-time
+      // correlation. Caller may opt out via params.immediate (warns user).
+      if (!params.immediate) {
+        const delayMs = cryptoRandomUint32() % 60001;
+        await new Promise((r) => setTimeout(r, delayMs));
+      }
+
       // Publish to recipient's relays
       await Promise.allSettled(
         this.pool.publish(targetRelays, wrap)
@@ -542,10 +563,12 @@ export class NostrMailClient {
       return { reads: new Set(), flags: new Map(), folders: new Map(), deleted: new Set() };
     }
 
-    // Merge all monthly partitions into a single state
-    let merged: MailboxState = { reads: new Set(), flags: new Map(), folders: new Map(), deleted: new Set() };
+    // Merge all monthly partitions into a single state.
+    // Each partition is decrypted from event.content per DEC-013.
+    const merged: MailboxState = { reads: new Set(), flags: new Map(), folders: new Map(), deleted: new Set() };
     for (const event of events) {
-      const partitionState = tagsToState(event.tags);
+      const partitionState = await this.parseStateFromEvent(event);
+      if (!partitionState) continue;
       // G-Set union for reads and deleted
       for (const id of partitionState.reads) merged.reads.add(id);
       for (const id of partitionState.deleted) merged.deleted.add(id);
@@ -562,16 +585,69 @@ export class NostrMailClient {
     return merged;
   }
 
-  /** Publish updated mailbox state to relays (current month partition). */
+  /**
+   * Publish updated mailbox state to relays (current month partition).
+   *
+   * Per DEC-013, the state payload is NIP-44-encrypted to the user's own
+   * pubkey and stored in the event's `content` field. Only the `["d", "YYYY-MM"]`
+   * partition tag is visible to relays.
+   */
   async publishMailboxState(state: MailboxState): Promise<void> {
-    if (!this.signer) return;
+    if (!this.signer || !this.signer.nip44) return;
 
     const now = new Date();
     const partition = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}`;
 
-    const tags = stateToTags(state, partition);
+    const payload = payloadFromState(state);
+    const encrypted = await this.signer.nip44.encrypt(this.pubkey, payload);
+
     const event = await this.signer.signEvent({
       kind: 30099,
+      created_at: Math.floor(Date.now() / 1000),
+      tags: [['d', partition]],
+      content: encrypted,
+    });
+
+    await Promise.allSettled(this.pool.publish(this.relays, event));
+  }
+
+  /** Decrypt and parse a kind 30099 mailbox state partition event. */
+  private async parseStateFromEvent(event: any): Promise<MailboxState | null> {
+    if (!this.signer?.nip44) return null;
+    if (!event.content) {
+      return { reads: new Set(), flags: new Map(), folders: new Map(), deleted: new Set() };
+    }
+    try {
+      const json = await this.signer.nip44.decrypt(this.pubkey, event.content);
+      return payloadToState(json);
+    } catch (err) {
+      console.warn('Failed to decrypt mailbox state partition:', err);
+      return null;
+    }
+  }
+
+  // ── Spam Policy (kind 10097) ─────────────────────────────────────────
+
+  /** Publish a kind 10097 spam policy event (public, unencrypted). */
+  async publishSpamPolicy(policy: {
+    cashuMinSats: number;
+    acceptedMints: string[];
+    unknownAction: 'quarantine' | 'reject';
+    contactsFree: boolean;
+  }): Promise<void> {
+    if (!this.signer) throw new Error('Not connected');
+
+    const tags: string[][] = [
+      ['cashu-min-sats', String(policy.cashuMinSats)],
+      ['unknown-action', policy.unknownAction],
+      ['contacts-free', policy.contactsFree ? 'true' : 'false'],
+    ];
+    for (const mint of policy.acceptedMints) {
+      if (mint.trim()) tags.push(['accepted-mint', mint.trim()]);
+    }
+
+    const event = await this.signer.signEvent({
+      kind: 10097,
       created_at: Math.floor(Date.now() / 1000),
       tags,
       content: '',
@@ -586,14 +662,28 @@ export class NostrMailClient {
   async resolveNip05(address: string): Promise<string | null> {
     const [name, domain] = address.split('@');
     if (!name || !domain) return null;
-
+    if (!/^[a-zA-Z0-9.-]+$/.test(domain)) return null;
+    let url: URL;
     try {
-      const resp = await fetch(`https://${domain}/.well-known/nostr.json?name=${name}`);
-      if (!resp.ok) return null;
-      const data = await resp.json();
-      return data.names?.[name] || null;
+      url = new URL(`https://${domain}/.well-known/nostr.json?name=${encodeURIComponent(name)}`);
     } catch {
       return null;
+    }
+    if (url.hostname !== domain) return null;
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 5000);
+    try {
+      const resp = await fetch(url.toString(), { signal: controller.signal });
+      if (!resp.ok) return null;
+      const data = await resp.json();
+      const pubkey = data?.names?.[name];
+      if (typeof pubkey !== 'string' || !/^[0-9a-f]{64}$/.test(pubkey)) return null;
+      return pubkey;
+    } catch {
+      return null;
+    } finally {
+      clearTimeout(timer);
     }
   }
 
@@ -606,9 +696,19 @@ export class NostrMailClient {
     }
     this.pool.close(this.relays);
     this.pool.close(this.inboxRelays);
+    if (this.privkeyBytes) {
+      this.privkeyBytes.fill(0);
+      this.privkeyBytes = null;
+    }
     this.signer = null;
     this.pubkey = '';
   }
+}
+
+function cryptoRandomUint32(): number {
+  const buf = new Uint32Array(1);
+  crypto.getRandomValues(buf);
+  return buf[0]!;
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -644,47 +744,59 @@ async function computeEventId(event: any): Promise<string> {
     .join('');
 }
 
-function tagsToState(tags: string[][]): MailboxState {
+interface MailboxStatePayload {
+  read: string[];
+  flag: Record<string, string[]>;
+  folder: Record<string, string>;
+  deleted: string[];
+}
+
+function payloadFromState(state: MailboxState): string {
+  const flag: Record<string, string[]> = {};
+  for (const [id, list] of state.flags) {
+    if (list.length > 0) flag[id] = list;
+  }
+  const folder: Record<string, string> = {};
+  for (const [id, f] of state.folders) folder[id] = f;
+  const payload: MailboxStatePayload = {
+    read: [...state.reads],
+    flag,
+    folder,
+    deleted: [...state.deleted],
+  };
+  return JSON.stringify(payload);
+}
+
+function payloadToState(json: string): MailboxState {
   const state: MailboxState = {
     reads: new Set(),
     flags: new Map(),
     folders: new Map(),
     deleted: new Set(),
   };
-
-  for (const tag of tags) {
-    const key = tag[0];
-    const eventId = tag[1];
-    if (!key || !eventId) continue;
-
-    switch (key) {
-      case 'read':
-        state.reads.add(eventId);
-        break;
-      case 'flag':
-        state.flags.set(eventId, tag.slice(2));
-        break;
-      case 'folder':
-        if (tag[2]) state.folders.set(eventId, tag[2]);
-        break;
-      case 'deleted':
-        state.deleted.add(eventId);
-        break;
+  let parsed: Partial<MailboxStatePayload>;
+  try {
+    parsed = JSON.parse(json);
+  } catch {
+    return state;
+  }
+  if (Array.isArray(parsed.read)) {
+    for (const id of parsed.read) if (typeof id === 'string') state.reads.add(id);
+  }
+  if (Array.isArray(parsed.deleted)) {
+    for (const id of parsed.deleted) if (typeof id === 'string') state.deleted.add(id);
+  }
+  if (parsed.flag && typeof parsed.flag === 'object') {
+    for (const [id, list] of Object.entries(parsed.flag)) {
+      if (Array.isArray(list)) state.flags.set(id, list.filter(f => typeof f === 'string'));
     }
   }
-
-  return state;
-}
-
-function stateToTags(state: MailboxState, partition: string): string[][] {
-  const tags: string[][] = [['d', partition]];
-  for (const id of state.reads) tags.push(['read', id]);
-  for (const [id, flagList] of state.flags) {
-    if (flagList.length > 0) tags.push(['flag', id, ...flagList]);
+  if (parsed.folder && typeof parsed.folder === 'object') {
+    for (const [id, f] of Object.entries(parsed.folder)) {
+      if (typeof f === 'string') state.folders.set(id, f);
+    }
   }
-  for (const [id, folder] of state.folders) tags.push(['folder', id, folder]);
-  for (const id of state.deleted) tags.push(['deleted', id]);
-  return tags;
+  return state;
 }
 
 // ─── Singleton ───────────────────────────────────────────────────────────────

@@ -51,6 +51,8 @@
     loading = true;
     try {
       const pubkey = await nostrMail.connectWithNsec(nsecInput);
+      // Clear the reactive value to reduce in-memory exposure (best-effort).
+      nsecInput = '';
       await finishStep1(pubkey);
     } catch (err) {
       error = err instanceof Error ? err.message : 'Invalid key';
@@ -197,6 +199,9 @@
           <input
             id="nsec"
             type="password"
+            autocomplete="new-password"
+            spellcheck="false"
+            data-form-type="other"
             placeholder="nsec1... or hex private key"
             class="input-field"
             bind:value={nsecInput}
