@@ -11,6 +11,7 @@
   } from '$lib/stores';
   import { nostrMail } from '$lib/nostr-mail';
   import { onMount } from 'svelte';
+  import { formatBody as sanitizeBody } from '$lib/sanitize';
   import type { ParsedMail } from '$lib/nostr-mail';
 
   $: threadId = $page.params.id;
@@ -59,20 +60,8 @@
     });
   }
 
-  function formatBody(body: string): string {
-    // Basic markdown-like rendering: paragraphs, bold, italic, code
-    return body
-      .split('\n\n')
-      .map(p => `<p class="mb-3">${escapeHtml(p).replace(/\n/g, '<br>')}</p>`)
-      .join('');
-  }
-
-  function escapeHtml(s: string): string {
-    return s
-      .replace(/&/g, '&amp;')
-      .replace(/</g, '&lt;')
-      .replace(/>/g, '&gt;')
-      .replace(/"/g, '&quot;');
+  function formatBody(msg: ParsedMail): string {
+    return sanitizeBody(msg.body || '', msg.contentType);
   }
 
   function handleReply() {
@@ -189,11 +178,11 @@
                   <span class="text-xs text-mail-muted">{formatDateTime(msg.createdAt)}</span>
                   <!-- Star -->
                   <button
-                    on:click={() => handleStarToggle(msg.id)}
+                    on:click={() => handleStarToggle(msg.messageId ?? msg.id)}
                     class="text-gray-300 hover:text-yellow-400 transition-colors"
                     title="Star message"
                   >
-                    <svg class="w-4 h-4 {($mailboxState.flags.get(msg.id) || []).includes('starred') ? 'text-yellow-400 fill-current' : ''}"
+                    <svg class="w-4 h-4 {($mailboxState.flags.get(msg.messageId ?? msg.id) || []).includes('starred') ? 'text-yellow-400 fill-current' : ''}"
                          fill="none" stroke="currentColor" viewBox="0 0 24 24">
                       <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2"
                             d="M11.049 2.927c.3-.921 1.603-.921 1.902 0l1.519 4.674a1 1 0 00.95.69h4.915c.969 0 1.371 1.24.588 1.81l-3.976 2.888a1 1 0 00-.363 1.118l1.518 4.674c.3.922-.755 1.688-1.538 1.118l-3.976-2.888a1 1 0 00-1.176 0l-3.976 2.888c-.783.57-1.838-.197-1.538-1.118l1.518-4.674a1 1 0 00-.363-1.118l-3.976-2.888c-.784-.57-.38-1.81.588-1.81h4.914a1 1 0 00.951-.69l1.519-4.674z" />
@@ -212,7 +201,7 @@
 
           <!-- Message body -->
           <div class="p-4 text-sm text-gray-700 leading-relaxed prose-sm">
-            {@html formatBody(msg.body)}
+            {@html formatBody(msg)}
           </div>
 
           <!-- Attachments -->
